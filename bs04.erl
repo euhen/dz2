@@ -120,7 +120,7 @@ start() ->
 }
 ">>,
 
-    Parsed = decode(JSON2),
+    Parsed = decode(JSON3),
     io:fwrite( "\n\nResult: \n" ),
     io:fwrite("~p~n",[ Parsed ]).
 
@@ -144,6 +144,7 @@ detect_type(<<Char/utf8, Rest/binary>>=Bin) ->
         <<"{">> -> extract_obj_items(Bin);
         <<"[">> -> extract_list_items(Bin);
         <<"\"">> -> extract_quoted(Bin);
+        <<"'">> -> extract_quoted(Bin);
         <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin);
         <<A>> when A >= 97, A =< 122 -> extract_unquoted(Bin)
     end.
@@ -154,7 +155,7 @@ extract_obj_items(<<_, _/binary>>=OrigBin) ->
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> process_pairs(Bin);
-        %<<"'">> -> process_pairs(Bin);
+        <<"'">> -> process_pairs(Bin);
         <<"{">> -> process_pairs(Rest);
         <<"}">> -> {#{no1=>no1}, Rest};
         <<",">> -> extract_obj_items(Rest);
@@ -215,6 +216,7 @@ extract_key(OrigBin) ->
     case <<Char>> of
         %<<"{">> -> extract_key(Rest);
         <<"\"">> -> extract_quoted(Bin);
+        <<"'">> -> extract_quoted(Bin);
         <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin);
         <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
     end.
@@ -242,12 +244,15 @@ extract_list_items(OrigBin) ->
     end.
 
 extract_quoted(<<"\"", Rest/binary>>) ->
+    extract_quoted1(Rest);
+extract_quoted(<<"'", Rest/binary>>) ->
     extract_quoted1(Rest).
 extract_quoted1(<<Char/utf8, Rest/binary>>=Bin) ->
     io:fwrite("extract_quoted1"),
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> {<<>>, Rest};
+        <<"'">> -> {<<>>, Rest};
         <<_>> ->
             {Tmp, Rest2} = extract_quoted1(Rest),
             {<<Char/utf8, Tmp/binary>>, Rest2}
