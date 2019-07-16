@@ -9,7 +9,7 @@ start() ->
 
     JSON = 
 		<<"{
-		    \"firstName\": \"John\",
+		    \"firstNa me\": \"John\",
 		    \"lastName\": \"Smith\",
 		    \"age\": 25,
 		    \"address\": {
@@ -30,7 +30,97 @@ start() ->
 		    ]
         }">>,
 
-    Parsed = decode(JSON),
+    JSON2 = 
+		<<"
+{
+  \"squadName\": \"Super hero squad\",
+  \"homeTown\": \"Metro City\",
+  \"formed\": 2016,
+  \"secretBase\": \"Super tower\",
+  \"active\": true,
+  \"members\": [
+    {
+      \"name\": \"Molecule Man\",
+      \"age\": 29,
+      \"secretIdentity\": \"Dan Jukes\",
+      \"powers\": [
+        \"Radiation resistance\",
+        \"Turning tiny\",
+        \"Radiation blast\"
+      ]
+    },
+    {
+      \"name\": \"Madame Uppercut\",
+      \"age\": 39,
+      \"secretIdentity\": \"Jane Wilson\",
+      \"powers\": [
+        \"Million tonne punch\",
+        \"Damage resistance\",
+        \"Superhuman reflexes\"
+      ]
+    },
+    {
+      \"name\": \"Eternal Flame\",
+      \"age\": 1000000,
+      \"secretIdentity\": \"Unknown\",
+      \"powers\": [
+        \"Immortality\",
+        \"Heat Immunity\",
+        \"Inferno\",
+        \"Teleportation\",
+        \"Interdimensional travel\"
+      ]
+    }
+  ]
+}
+">>,
+
+    JSON3 = 
+		<<"
+{
+  'squadName': 'Super hero squad',
+  'homeTown': 'Metro City',
+  'formed': 2016,
+  'secretBase': 'Super tower',
+  'active': true,
+  'members': [
+    {
+      'name': 'Molecule Man',
+      'age': 29,
+      'secretIdentity': 'Dan Jukes',
+      'powers': [
+        'Radiation resistance',
+        'Turning tiny',
+        'Radiation blast'
+      ]
+    },
+    {
+      'name': 'Madame Uppercut',
+      'age': 39,
+      'secretIdentity': 'Jane Wilson',
+      'powers': [
+        'Million tonne punch',
+        'Damage resistance',
+        'Superhuman reflexes'
+      ]
+    },
+    {
+      'name': 'Eternal Flame',
+      'age': 1000000,
+      'secretIdentity': 'Unknown',
+      'powers': [
+        'Immortality',
+        'Heat Immunity',
+        'Inferno',
+        'Teleportation',
+        'Interdimensional travel'
+      ]
+    }
+  ]
+}
+">>,
+
+    Parsed = decode(JSON2),
     io:fwrite( "\n\nResult: \n" ),
     io:fwrite("~p~n",[ Parsed ]).
 
@@ -64,8 +154,9 @@ extract_obj_items(<<_, _/binary>>=OrigBin) ->
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> process_pairs(Bin);
+        %<<"'">> -> process_pairs(Bin);
         <<"{">> -> process_pairs(Rest);
-        <<"}">> -> {{no1, no1}, <<>>};
+        <<"}">> -> {#{no1=>no1}, Rest};
         <<",">> -> extract_obj_items(Rest);
         <<A>> when A >= 48, A =< 122 -> process_pairs(Bin)
     end;
@@ -80,10 +171,10 @@ process_pairs(<<_, _/binary>>=OrigBin) ->
     case <<Char>> of
         <<"}">> -> {#{no3=>no3}, Rest};
         <<_>> ->
-            {{Key, Value}, Rest2} = extract_pair(Rest),
+            {{Key, Value}, Rest2} = extract_pair(Bin),
             %io:fwrite({{Key, Value}, Rest2}),
             Map1 = #{Key=>Value},
-            {Map2, Rest3} = process_pairs(Rest2),
+            {Map2, Rest3} = extract_obj_items(Rest2),
             {maps:merge(Map1, Map2), Rest3}
     end;
 process_pairs(<<>>) ->
@@ -124,31 +215,36 @@ extract_key(OrigBin) ->
     case <<Char>> of
         %<<"{">> -> extract_key(Rest);
         <<"\"">> -> extract_quoted(Bin);
-        <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin)
-        %<<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
+        <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin);
+        <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
     end.
 
 extract_value(OrigBin) ->
     io:fwrite("extract_value"),
     parse(OrigBin).
 
-extract_list_items(<<Char/utf8, Rest/binary>>=Bin) ->
-    io:fwrite("extract_list_items"),
-    io:fwrite(<<Char>>),
-    case <<Char>> of
-        <<"[">> -> extract_list_items(Rest);
-        <<"]">> -> {<<>>, Rest};
-        <<_>> ->
-            {Tmp, Rest2} = extract_list_items(Rest),
-            {<<Char/utf8, Tmp/binary>>, Rest2}
-    end;
 extract_list_items(<<>>) ->
-    {<<>>, <<>>}.
+    {[], <<>>};
+extract_list_items(OrigBin) ->
+    io:fwrite("extract_list_items"),
+    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
+    io:fwrite(<<Char>>),
+    io:fwrite(Rest),
+    case <<Char>> of
+        %<<"}">> -> extract_list_items(Rest);
+        <<"[">> -> extract_list_items(Rest);
+        <<",">> -> extract_list_items(Rest);
+        <<"]">> -> {[], Rest};
+        <<_>> -> 
+            {Obj1, Rest1} = parse(Bin),
+            {List2, Rest2} = extract_list_items(Rest1),
+            {[Obj1] ++ List2, Rest2}
+    end.
 
 extract_quoted(<<"\"", Rest/binary>>) ->
     extract_quoted1(Rest).
 extract_quoted1(<<Char/utf8, Rest/binary>>=Bin) ->
-    io:fwrite("process_pairs"),
+    io:fwrite("extract_quoted1"),
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> {<<>>, Rest};
@@ -162,9 +258,10 @@ extract_unquoted(<<"true", Rest/binary>>) ->
 extract_unquoted(<<"false", Rest/binary>>) ->
     {false, Rest};
 extract_unquoted(<<Char/utf8, Rest/binary>>=Bin) ->
-    io:fwrite("process_pairs"),
+    io:fwrite("extract_unquoted"),
     io:fwrite(<<Char>>),
     case <<Char>> of
+        %<<"\"">> -> io:fwrite("ERRORRRRRRR"), {<<>>, Rest};
         <<" ">> -> {<<>>, Bin};
         <<A>> when A >= 0, A =< 31 -> {<<>>, Bin};
         <<",">> -> {<<>>, Bin};
