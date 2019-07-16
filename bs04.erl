@@ -38,11 +38,12 @@ decode(Bin) ->
     {Result, _} = parse(Bin),
     Result.
 
-parse(<<Char/utf8, Rest/binary>>=Bin) ->
+parse(<<>>) ->
+    {<<>>, <<>>};
+parse(OrigBin) ->
+    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     io:fwrite(<<Char>>),
     case <<Char>> of
-        <<" ">> -> parse(Rest);
-        <<A>> when A >= 0, A =< 31 -> parse(Rest);
         <<>> -> stub3;
         _ -> detect_type(Bin)
     end.
@@ -52,34 +53,32 @@ detect_type(<<Char/utf8, Rest/binary>>=Bin) ->
     case <<Char>> of
         <<"{">> -> extract_obj_items(Bin);
         <<"[">> -> extract_list_items(Bin);
-        <<"\"">> -> extract_quoted(Rest);
-        <<A>> when A >= 48, A =< 57 -> extract_unquoted(Bin);
-        <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
+        <<"\"">> -> extract_quoted(Bin);
+        <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin);
+        <<A>> when A >= 97, A =< 122 -> extract_unquoted(Bin)
     end.
 
-extract_obj_items(<<Char/utf8, Rest/binary>>=Bin) ->
+extract_obj_items(<<_, _/binary>>=OrigBin) ->
     io:fwrite("extract_obj_items1"),
+    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> process_pairs(Bin);
         <<"{">> -> process_pairs(Rest);
         <<"}">> -> {{no1, no1}, <<>>};
         <<",">> -> extract_obj_items(Rest);
-        <<" ">> -> extract_obj_items(Rest);
-        <<A>> when A >= 0, A =< 31 -> extract_obj_items(Rest);
         <<A>> when A >= 48, A =< 122 -> process_pairs(Bin)
     end;
 extract_obj_items(<<>>) ->
     io:fwrite("extract_obj_items2"),
     {#{no2=>no2}, <<>>}.
 
-process_pairs(<<Char/utf8, Rest/binary>>=Bin) ->
+process_pairs(<<_, _/binary>>=OrigBin) ->
     io:fwrite("process_pairs1"),
+    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     io:fwrite(<<Char>>),
     case <<Char>> of
-        <<" ">> -> process_pairs(Rest);
-        <<A>> when A >= 0, A =< 31 -> process_pairs(Rest);
-        <<"}">> -> {#{no3=>no3}, <<>>};
+        <<"}">> -> {#{no3=>no3}, Rest};
         <<_>> ->
             {{Key, Value}, Rest2} = extract_pair(Rest),
             %io:fwrite({{Key, Value}, Rest2}),
@@ -103,40 +102,35 @@ del_dots(<<Char/utf8, Rest/binary>>=Bin) ->
     case <<Char>> of
         <<":">> -> spaces_cleaner(Rest);
         <<_>> -> spaces_cleaner(Bin)
-    end.
+    end;
+del_dots(<<>>) ->
+    <<>>.
 
-spaces_cleaner(<<Char/utf8, Rest/binary>>=Bin) ->
+spaces_cleaner(<<Char/utf8, Rest/binary>>=Text) ->
+    io:fwrite("spaces_cleaner"),
     case <<Char>> of
         <<" ">> -> spaces_cleaner(Rest);
         <<A>> when A >= 0, A =< 31 -> spaces_cleaner(Rest);
-        <<_>> -> Bin
-    end.
+        <<>> -> (Text);
+        _ -> (Text)
+    end;
+spaces_cleaner(<<>>) ->
+    <<>>.
 
-extract_key(<<Char/utf8, Rest/binary>>=Bin) ->
+extract_key(OrigBin) ->
     io:fwrite("extract_key"),
+    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     io:fwrite(<<Char>>),
     case <<Char>> of
-        <<" ">> -> extract_key(Rest);
-        <<"{">> -> extract_key(Rest);
-        <<A>> when A >= 0, A =< 31 -> extract_key(Rest);
-        <<"\"">> -> extract_quoted(Rest);
-        <<A>> when A >= 48, A =< 57 -> extract_unquoted(Bin);
-        <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
+        %<<"{">> -> extract_key(Rest);
+        <<"\"">> -> extract_quoted(Bin);
+        <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin)
+        %<<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
     end.
 
-extract_value(<<Char/utf8, Rest/binary>>=Bin) ->
+extract_value(OrigBin) ->
     io:fwrite("extract_value"),
-    io:fwrite(<<Char>>),
-    case <<Char>> of
-        <<"{">> -> parse(Bin);
-        <<"[">> -> parse(Bin);
-        <<":">> -> parse(Rest);
-        <<" ">> -> extract_value(Rest);
-        <<A>> when A >= 0, A =< 31 -> extract_value(Rest);
-        <<"\"">> -> extract_quoted(Rest);
-        <<A>> when A >= 48, A =< 57 -> extract_unquoted(Bin);
-        <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
-    end.
+    parse(OrigBin).
 
 extract_list_items(<<Char/utf8, Rest/binary>>=Bin) ->
     io:fwrite("extract_list_items"),
@@ -151,25 +145,42 @@ extract_list_items(<<Char/utf8, Rest/binary>>=Bin) ->
 extract_list_items(<<>>) ->
     {<<>>, <<>>}.
 
-extract_quoted(<<Char/utf8, Rest/binary>>=Bin) ->
+extract_quoted(<<"\"", Rest/binary>>) ->
+    extract_quoted1(Rest).
+extract_quoted1(<<Char/utf8, Rest/binary>>=Bin) ->
     io:fwrite("process_pairs"),
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<"\"">> -> {<<>>, Rest};
         <<_>> ->
-            {Tmp, Rest2} = extract_quoted(Rest),
+            {Tmp, Rest2} = extract_quoted1(Rest),
             {<<Char/utf8, Tmp/binary>>, Rest2}
-    end;
-extract_quoted(<<>>) ->
-    {<<>>, <<>>}.
+    end.
 
+extract_unquoted(<<"true", Rest/binary>>) ->
+    {true, Rest};
+extract_unquoted(<<"false", Rest/binary>>) ->
+    {false, Rest};
 extract_unquoted(<<Char/utf8, Rest/binary>>=Bin) ->
     io:fwrite("process_pairs"),
     io:fwrite(<<Char>>),
     case <<Char>> of
         <<" ">> -> {<<>>, Bin};
         <<A>> when A >= 0, A =< 31 -> {<<>>, Bin};
+        <<",">> -> {<<>>, Bin};
+        <<":">> -> {<<>>, Bin};
+        <<"}">> -> {<<>>, Bin};
+        <<"]">> -> {<<>>, Bin};
         <<_>> ->
-            {Tmp, Rest2} = extract_quoted(Rest),
+            {Tmp, Rest2} = extract_unquoted(Rest),
             {<<Char/utf8, Tmp/binary>>, Rest2}
     end.
+
+extract_numeric(Bin) ->
+    {Field, Rest} = extract_unquoted(Bin),
+    NumField = try
+        list_to_integer(binary_to_list(Field), 10)
+    catch
+        error:badarg -> list_to_float( binary_to_list(Field) )
+    end,
+    {NumField, Rest}.
