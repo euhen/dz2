@@ -3,7 +3,7 @@
 
 -module(bs04).
 -export([start/0]).
--export([decode/1]).
+-export([decode/2]).
 
 start() ->
 
@@ -120,63 +120,79 @@ start() ->
 }
 ">>,
 
-    Parsed = decode(JSON3),
+    Parsed = decode(JSON3, proplist),
     io:fwrite( "\n\nResult: \n" ),
     io:fwrite("~p~n",[ Parsed ]).
 
-decode(Bin) ->
-    {Result, _} = parse(Bin),
+decode(Bin, ResultType) ->
+    {Result, _} = parse(Bin, ResultType),
     Result.
 
-parse(<<>>) ->
+parse(<<>>, ResultType) ->
     {<<>>, <<>>};
-parse(OrigBin) ->
+parse(OrigBin, ResultType) ->
     <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     case <<Char>> of
         <<>> -> stub3;
-        _ -> detect_type(Bin)
+        _ -> detect_type(Bin, ResultType)
     end.
 
-detect_type(<<Char/utf8, Rest/binary>>=Bin) ->
+detect_type(<<Char/utf8, Rest/binary>>=Bin, ResultType) ->
     case <<Char>> of
-        <<"{">> -> extract_obj_items(Bin);
-        <<"[">> -> extract_list_items(Bin);
+        <<"{">> -> extract_obj_items(Bin, ResultType);
+        <<"[">> -> extract_list_items(Bin, ResultType);
         <<"\"">> -> extract_quoted(Bin);
         <<"'">> -> extract_quoted(Bin);
         <<A>> when A >= 48, A =< 57 -> extract_numeric(Bin);
         <<A>> when A >= 97, A =< 122 -> extract_unquoted(Bin)
     end.
 
-extract_obj_items(<<_, _/binary>>=OrigBin) ->
+extract_obj_items(<<_, _/binary>>=OrigBin, ResultType) ->
     <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     case <<Char>> of
-        <<"\"">> -> process_pairs(Bin);
-        <<"'">> -> process_pairs(Bin);
-        <<"{">> -> process_pairs(Rest);
-        <<"}">> -> {#{}, Rest};
-        <<",">> -> extract_obj_items(Rest);
-        <<A>> when A >= 48, A =< 122 -> process_pairs(Bin)
+        <<"\"">> -> process_pairs(Bin, ResultType);
+        <<"'">> -> process_pairs(Bin, ResultType);
+        <<"{">> -> process_pairs(Rest, ResultType);
+        <<"}">> ->
+            case ResultType of
+                map ->
+                    {#{}, Rest};
+                proplist ->
+                    {[], Rest}
+            end;
+        <<",">> -> extract_obj_items(Rest, ResultType);
+        <<A>> when A >= 48, A =< 122 -> process_pairs(Bin, ResultType)
     end;
-extract_obj_items(<<>>) ->
-    {#{}, <<>>}.
+extract_obj_items(<<>>, map) ->
+    {#{}, <<>>};
+extract_obj_items(<<>>, proplist) ->
+    {[], <<>>}.
 
-process_pairs(<<_, _/binary>>=OrigBin) ->
+process_pairs(<<_, _/binary>>=OrigBin, ResultType) ->
     <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     case <<Char>> of
         <<"}">> -> {#{}, Rest};
         <<_>> ->
-            {{Key, Value}, Rest2} = extract_pair(Bin),
-            Map1 = #{Key=>Value},
-            {Map2, Rest3} = extract_obj_items(Rest2),
-            {maps:merge(Map1, Map2), Rest3}
+            {{Key, Value}, Rest2} = extract_pair(Bin, ResultType),
+            {Map2, Rest3} = extract_obj_items(Rest2, ResultType),
+            case ResultType of
+                map ->
+                    Map1 = #{Key=>Value},
+                    {maps:merge(Map1, Map2), Rest3};
+                proplist ->
+                    Map1 = {Key, Value},
+                    {[Map1 | Map2], Rest3}
+            end
     end;
-process_pairs(<<>>) ->
-    {#{}, <<>>}.
+process_pairs(<<>>, map) ->
+    {#{}, <<>>};
+process_pairs(<<>>, proplist) ->
+    {[], <<>>}.
 
-extract_pair(Bin) ->
+extract_pair(Bin, ResultType) ->
     {Key, Bin2} = extract_key(Bin),
     Bin2a = del_dots(Bin2),
-    {Value, Rest3} = extract_value(Bin2a),
+    {Value, Rest3} = extract_value(Bin2a, ResultType),
     {{Key, Value}, Rest3}.
 
 del_dots(<<Char/utf8, Rest/binary>>=Bin) ->
@@ -206,21 +222,21 @@ extract_key(OrigBin) ->
         <<A>> when A >= 64, A =< 122 -> extract_unquoted(Bin)
     end.
 
-extract_value(OrigBin) ->
-    parse(OrigBin).
+extract_value(OrigBin, ResultType) ->
+    parse(OrigBin, ResultType).
 
-extract_list_items(<<>>) ->
+extract_list_items(<<>>, ResultType) ->
     {[], <<>>};
-extract_list_items(OrigBin) ->
+extract_list_items(OrigBin, ResultType) ->
     <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     case <<Char>> of
-        <<"[">> -> extract_list_items(Rest);
-        <<",">> -> extract_list_items(Rest);
+        <<"[">> -> extract_list_items(Rest, ResultType);
+        <<",">> -> extract_list_items(Rest, ResultType);
         <<"]">> -> {[], Rest};
         <<_>> -> 
-            {Obj1, Rest1} = parse(Bin),
-            {List2, Rest2} = extract_list_items(Rest1),
-            {[Obj1] ++ List2, Rest2}
+            {Obj1, Rest1} = parse(Bin, ResultType),
+            {List2, Rest2} = extract_list_items(Rest1, ResultType),
+            {[Obj1 | List2], Rest2}
     end.
 
 extract_quoted(<<"\"", Rest/binary>>) ->
