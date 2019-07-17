@@ -128,16 +128,16 @@ decode(Bin, ResultType) ->
     {Result, _} = parse(Bin, ResultType),
     Result.
 
-parse(<<>>, ResultType) ->
+parse(<<>>, _ResultType) ->
     {<<>>, <<>>};
 parse(OrigBin, ResultType) ->
-    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
-    case <<Char>> of
-        <<>> -> stub3;
-        _ -> detect_type(Bin, ResultType)
+    Bin = spaces_cleaner(OrigBin),
+    case Bin of
+        <<>> -> <<>>;
+        <<_Char/utf8, _Rest/binary>> -> detect_type(Bin, ResultType)
     end.
 
-detect_type(<<Char/utf8, Rest/binary>>=Bin, ResultType) ->
+detect_type(<<Char/utf8, _Rest/binary>>=Bin, ResultType) ->
     case <<Char>> of
         <<"{">> -> extract_obj_items(Bin, ResultType);
         <<"[">> -> extract_list_items(Bin, ResultType);
@@ -214,7 +214,7 @@ spaces_cleaner(<<>>) ->
     <<>>.
 
 extract_key(OrigBin) ->
-    <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
+    <<Char/utf8, _Rest/binary>>=Bin = spaces_cleaner(OrigBin),
     case <<Char>> of
         <<"\"">> -> extract_quoted(Bin);
         <<"'">> -> extract_quoted(Bin);
@@ -225,7 +225,7 @@ extract_key(OrigBin) ->
 extract_value(OrigBin, ResultType) ->
     parse(OrigBin, ResultType).
 
-extract_list_items(<<>>, ResultType) ->
+extract_list_items(<<>>, _ResultType) ->
     {[], <<>>};
 extract_list_items(OrigBin, ResultType) ->
     <<Char/utf8, Rest/binary>>=Bin = spaces_cleaner(OrigBin),
@@ -243,7 +243,7 @@ extract_quoted(<<"\"", Rest/binary>>) ->
     extract_quoted1(Rest);
 extract_quoted(<<"'", Rest/binary>>) ->
     extract_quoted1(Rest).
-extract_quoted1(<<Char/utf8, Rest/binary>>=Bin) ->
+extract_quoted1(<<Char/utf8, Rest/binary>>) ->
     case <<Char>> of
         <<"\"">> -> {<<>>, Rest};
         <<"'">> -> {<<>>, Rest};
