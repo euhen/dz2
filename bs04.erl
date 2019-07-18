@@ -240,15 +240,14 @@ extract_list_items(OrigBin, ResultType) ->
     end.
 
 extract_quoted(<<"\"", Rest/binary>>) ->
-    extract_quoted1(Rest);
+    extract_quoted(Rest, <<"\"">>);
 extract_quoted(<<"'", Rest/binary>>) ->
-    extract_quoted1(Rest).
-extract_quoted1(<<Char/utf8, Rest/binary>>) ->
+    extract_quoted(Rest, <<"'">>).
+extract_quoted(<<Char/utf8, Rest/binary>>, QuotesChar) ->
     case <<Char>> of
-        <<"\"">> -> {<<>>, Rest};
-        <<"'">> -> {<<>>, Rest};
+        QuotesChar -> {<<>>, Rest};
         <<_>> ->
-            {Tmp, Rest2} = extract_quoted1(Rest),
+            {Tmp, Rest2} = extract_quoted(Rest, QuotesChar),
             {<<Char/utf8, Tmp/binary>>, Rest2}
     end.
 
